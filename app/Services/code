@@ -1,0 +1,156 @@
+<?php
+namespace App\Services;
+
+class GoogleSheet{
+    private $spreadSheetId;
+    private $client;
+    private $googleSheetService;
+
+
+    public function __construct(){
+        $this->spreadSheetId = '1vbkv_EhbZY0XeuMcw7f71WH0PWkT4cxOmSiuWc6ogC0';
+        $this->client = new \Google_Client();
+        $this->client->setAuthConfig(env("GOOGLE_SERVICE_ACCOUNT_JSON_LOCATION"));
+        $this->client->addScope("https://www.googleapis.com/auth/spreadsheets");
+        $this->googleSheetService = new \Google_Service_Sheets($this->client);
+    }
+    public function readGoogleSheets()
+    {
+        $dimensions = $this->getDimensions($this->spreadSheetId);
+        // return($dimensions);
+        $colRange = 'Sheet1!1:1';
+        $range = 'Sheet1!A1:'.$dimensions['colCount'];
+
+        $data = $this->googleSheetService
+        ->spreadsheets_values
+        ->batchGet($this->spreadSheetId,['ranges' => $range]);
+
+        return $data->getValuesRanges()[0]->values;
+    }
+    public function saveDataSheet(array $data){
+        $dimensions = $this->getDimensions($this->spreadSheetId);
+
+        $body = new Google_Service_Sheets_ValuesRange([
+            'values' => $data
+
+        ]);
+        $params = [
+            'valueInputOption' => 'USER_ENTERED',
+        ];
+
+        $range = "A".($dimensions['rowCount']+1);
+
+        return $this->googlSheetService->spreadsheets_values->update($this->spreadSheetId,$range,$body,$params);
+    }
+
+    private function getDimensions($spreadSheetId)
+    {
+        $rowDimensions = $this->googleSheetService->spreadsheets_values->batchGet(
+            $spreadSheetId,
+            ['ranges' => 'Sheet1!A:A','majorDimension'=>'COLUMNS']
+        );
+
+        //if data is present at nth row, it will return array till nth row
+        //if all column values are empty, it returns null
+        $rowMeta = $rowDimensions->getValueRanges()[0]->values;
+        if (! $rowMeta) {
+            return [
+                'error' => true,
+                'message' => 'missing row data'
+            ];
+        }
+
+        $colDimensions = $this->googleSheetService->spreadsheets_values->batchGet(
+            $spreadSheetId,
+            ['ranges' => 'Sheet1!1:1','majorDimension'=>'ROWS']
+        );
+        
+        //if data is present at nth col, it will return array till nth col
+        //if all column values are empty, it returns null
+        $colMeta = $colDimensions->getValueRanges()[0]->values;
+        if (! $colMeta) {
+            return [
+                'error' => true,
+                'message' => 'missing row data'
+            ];
+        }
+
+        return [
+            'error' => false,
+            'rowCount' => count($rowMeta[0]),
+            'colCount' => $this->colLengthToColumnAddress(count($colMeta[0]))
+        ];
+    }
+    private  function colLengthToColumnAddress($number)
+    {
+        if ($number <= 0) return null;
+
+        
+        while ($number > 0) {
+            $temp = ($number - 1) % 26;
+            $letter = chr($temp + 65);
+            $number = ($number - $temp - 1) / 26;
+        }
+        return $letter;
+    }
+}
+
+
+
+
+
+
+
+
+
+<?php
+
+namespace App\Http\Controllers;
+use App\Services\GoogleSheet;
+use Illuminate\Http\Request;
+use App\Services\Google_Service_Sheets_ValuesRange;
+class PagesController extends Controller
+{
+    /**
+     * Create a new controller instance.
+     *
+     * @return void
+     */
+    public function __construct(GoogleSheet $googlesheet)
+    {
+        $this->middleware('auth');
+        $this->googlesheet=$googlesheet;
+    }
+
+
+    public function index(GoogleSheet $googlesheet){
+        // $title = 'Welcome to DOTR';
+        // return view ('pages.index', compact ('title'));
+        $values = [
+            [2,'ggg','$created_at','191919191']
+        ];
+
+        $savedData = $googlesheet->saveDataSheet($values);
+
+        dump($savedData);
+        dd($googlesheet->readGoogleSheets());
+
+        // return $sheets = $this->googlesheet->readGoogleSheets();
+}
+    public function about(){
+        $title = 'About';
+        return view ('pages.about',compact('title'));
+}
+    public function services(){
+        $data = array(
+            'title' => 'Services',
+            'services' => ['GG','GG2']
+        );
+        return view ('pages.services')->with($data);
+}
+    public function timeinout(){
+        $title = 'About';
+    return view ('pages.timeinout',compact('title'));
+}
+    
+}
